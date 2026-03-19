@@ -1,167 +1,165 @@
 """
-Seed the database with all DSE-listed companies and historical dividend data.
+Seed the database with DSE-listed companies using LIVE data from the DSE website.
 
-Run: python -m scripts.seed_data
+Fetches real-time prices from the DSE API and scrapes dividend data from
+the corporate actions page. Company names and sectors are maintained as a
+lookup since the DSE API only provides ticker symbols.
+
+Run: python scripts/seed_data.py
 """
 
 import sys
-from datetime import date
-from decimal import Decimal
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from decimal import Decimal
+
 from app.database import SessionLocal, engine, Base
 from app.models import Company, Dividend
+from app.scrapers.dse_price_scraper import DSEPriceScraper
+from app.scrapers.dse_dividend_scraper import DSEDividendScraper
 
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-# ─── DSE Listed Companies ───────────────────────────────────────────
+# ─── Company metadata (name, sector, shares) ──────────────────────
+# The DSE API only returns symbols + prices. Names, sectors, and share
+# counts come from this lookup, sourced from DSE listed company profiles.
+# Update this when new companies are listed on the DSE.
 
-COMPANIES = [
-    {"symbol": "CRDB", "name": "CRDB Bank Plc", "sector": "Banking", "total_shares": 2_611_862_500, "current_price": Decimal("2800.00")},
-    {"symbol": "NMB", "name": "NMB Bank Plc", "sector": "Banking", "total_shares": 500_000_000, "current_price": Decimal("14370.00")},
-    {"symbol": "DCB", "name": "DCB Commercial Bank Plc", "sector": "Banking", "total_shares": 191_441_218, "current_price": Decimal("685.00")},
-    {"symbol": "MCB", "name": "Mkombozi Commercial Bank Plc", "sector": "Banking", "total_shares": 61_787_667, "current_price": Decimal("1720.00")},
-    {"symbol": "MKCB", "name": "Maendeleo Bank Plc", "sector": "Banking", "total_shares": 32_000_000, "current_price": Decimal("600.00")},
-    {"symbol": "KCB", "name": "KCB Group Plc", "sector": "Banking", "total_shares": 3_206_611_400, "current_price": Decimal("1200.00")},
-    {"symbol": "MBP", "name": "Mwalimu Commercial Bank Plc", "sector": "Banking", "total_shares": 100_000_000, "current_price": Decimal("500.00")},
-
-    {"symbol": "TBL", "name": "Tanzania Breweries Ltd", "sector": "Manufacturing", "total_shares": 295_058_870, "current_price": Decimal("9710.00")},
-    {"symbol": "TCC", "name": "Tanzania Cigarette Company", "sector": "Manufacturing", "total_shares": 20_000_000, "current_price": Decimal("8800.00")},
-    {"symbol": "TPCC", "name": "Tanzania Portland Cement Company", "sector": "Manufacturing", "total_shares": 179_923_100, "current_price": Decimal("6790.00")},
-    {"symbol": "TOL", "name": "Tanzania Oxygen Ltd", "sector": "Manufacturing", "total_shares": 17_500_000, "current_price": Decimal("2500.00")},
-    {"symbol": "SWIS", "name": "Swissport Tanzania Plc", "sector": "Services", "total_shares": 36_000_000, "current_price": Decimal("4500.00")},
-
-    {"symbol": "VODA", "name": "Vodacom Tanzania Plc", "sector": "Telecommunications", "total_shares": 2_240_000_000, "current_price": Decimal("850.00")},
-    {"symbol": "EABL", "name": "East African Breweries Ltd", "sector": "Manufacturing", "total_shares": 790_774_356, "current_price": Decimal("3200.00")},
-    {"symbol": "NMG", "name": "Nation Media Group Ltd", "sector": "Media", "total_shares": 188_542_286, "current_price": Decimal("1400.00")},
-
-    {"symbol": "NICO", "name": "NICO (Tanzania) Ltd", "sector": "Insurance", "total_shares": 61_651_180, "current_price": Decimal("3750.00")},
-    {"symbol": "PAL", "name": "PAL Pensions Ltd", "sector": "Insurance", "total_shares": 160_400_000, "current_price": Decimal("675.00")},
-    {"symbol": "AFRIPRISE", "name": "Afriprise Holdings Ltd", "sector": "Financial Services", "total_shares": 40_000_000, "current_price": Decimal("380.00")},
-
-    {"symbol": "JHL", "name": "Jacaranda Hotels Ltd", "sector": "Hospitality", "total_shares": 40_000_000, "current_price": Decimal("300.00")},
-    {"symbol": "TTP", "name": "TTP Group Plc", "sector": "Agriculture", "total_shares": 95_000_000, "current_price": Decimal("585.00")},
-    {"symbol": "USL", "name": "USL Ltd", "sector": "Manufacturing", "total_shares": 25_000_000, "current_price": Decimal("2000.00")},
-    {"symbol": "YETU", "name": "Yetu Microfinance Bank Plc", "sector": "Banking", "total_shares": 78_469_374, "current_price": Decimal("450.00")},
-    {"symbol": "JATU", "name": "Jatu Plc", "sector": "Real Estate", "total_shares": 50_000_000, "current_price": Decimal("400.00")},
-    {"symbol": "KA", "name": "Kenya Airways Ltd", "sector": "Aviation", "total_shares": 1_496_469_035, "current_price": Decimal("300.00")},
-    {"symbol": "MUCOBA", "name": "Mucoba Bank Plc", "sector": "Banking", "total_shares": 30_000_000, "current_price": Decimal("600.00")},
-    {"symbol": "SWALA", "name": "Swala Oil and Gas Plc", "sector": "Energy", "total_shares": 71_745_849, "current_price": Decimal("350.00")},
-    {"symbol": "DSE", "name": "Dar es Salaam Stock Exchange Plc", "sector": "Financial Services", "total_shares": 23_826_120, "current_price": Decimal("6390.00")},
-]
-
-# ─── Historical Dividend Data ───────────────────────────────────────
-# Sources: DSE corporate actions, annual reports, broker data
-
-DIVIDENDS = [
-    # TBL - Consistent high dividend payer
-    {"symbol": "TBL", "year": "2020", "dps": Decimal("510.00"), "announced": date(2020, 5, 20), "closure": date(2020, 6, 10), "payment": date(2020, 6, 15), "type": "final", "status": "paid"},
-    {"symbol": "TBL", "year": "2021", "dps": Decimal("580.00"), "announced": date(2021, 5, 19), "closure": date(2021, 6, 9), "payment": date(2021, 6, 14), "type": "final", "status": "paid"},
-    {"symbol": "TBL", "year": "2022", "dps": Decimal("640.00"), "announced": date(2022, 5, 18), "closure": date(2022, 6, 8), "payment": date(2022, 6, 13), "type": "final", "status": "paid"},
-    {"symbol": "TBL", "year": "2023", "dps": Decimal("700.00"), "announced": date(2023, 5, 17), "closure": date(2023, 6, 7), "payment": date(2023, 6, 12), "type": "final", "status": "paid"},
-    {"symbol": "TBL", "year": "2024", "dps": Decimal("750.00"), "announced": date(2024, 5, 22), "closure": date(2024, 6, 12), "payment": date(2024, 6, 17), "type": "final", "status": "paid"},
-    {"symbol": "TBL", "year": "2025", "dps": Decimal("818.00"), "announced": date(2025, 5, 21), "closure": date(2025, 6, 12), "payment": date(2025, 6, 16), "type": "final", "status": "paid"},
-
-    # CRDB Bank
-    {"symbol": "CRDB", "year": "2020", "dps": Decimal("15.00"), "announced": date(2020, 6, 15), "closure": date(2020, 7, 1), "payment": date(2020, 7, 15), "type": "final", "status": "paid"},
-    {"symbol": "CRDB", "year": "2021", "dps": Decimal("25.00"), "announced": date(2021, 6, 14), "closure": date(2021, 7, 1), "payment": date(2021, 7, 14), "type": "final", "status": "paid"},
-    {"symbol": "CRDB", "year": "2022", "dps": Decimal("40.00"), "announced": date(2022, 6, 13), "closure": date(2022, 7, 1), "payment": date(2022, 7, 13), "type": "final", "status": "paid"},
-    {"symbol": "CRDB", "year": "2023", "dps": Decimal("55.00"), "announced": date(2023, 6, 12), "closure": date(2023, 7, 1), "payment": date(2023, 7, 12), "type": "final", "status": "paid"},
-    {"symbol": "CRDB", "year": "2024", "dps": Decimal("75.00"), "announced": date(2024, 6, 10), "closure": date(2024, 7, 1), "payment": date(2024, 7, 10), "type": "final", "status": "paid"},
-
-    # NMB Bank
-    {"symbol": "NMB", "year": "2020", "dps": Decimal("200.00"), "announced": date(2020, 6, 20), "closure": date(2020, 7, 10), "payment": date(2020, 7, 20), "type": "final", "status": "paid"},
-    {"symbol": "NMB", "year": "2021", "dps": Decimal("340.00"), "announced": date(2021, 6, 18), "closure": date(2021, 7, 8), "payment": date(2021, 7, 18), "type": "final", "status": "paid"},
-    {"symbol": "NMB", "year": "2022", "dps": Decimal("475.00"), "announced": date(2022, 6, 17), "closure": date(2022, 7, 7), "payment": date(2022, 7, 17), "type": "final", "status": "paid"},
-    {"symbol": "NMB", "year": "2023", "dps": Decimal("580.00"), "announced": date(2023, 6, 16), "closure": date(2023, 7, 6), "payment": date(2023, 7, 16), "type": "final", "status": "paid"},
-    {"symbol": "NMB", "year": "2024", "dps": Decimal("730.00"), "announced": date(2024, 6, 14), "closure": date(2024, 7, 4), "payment": date(2024, 7, 14), "type": "final", "status": "paid"},
-
-    # VODA - confirmed from DSE site
-    {"symbol": "VODA", "year": "2022", "dps": Decimal("16.50"), "announced": date(2022, 7, 20), "closure": date(2022, 8, 12), "payment": date(2022, 10, 12), "type": "final", "status": "paid"},
-    {"symbol": "VODA", "year": "2023", "dps": Decimal("18.00"), "announced": date(2023, 7, 21), "closure": date(2023, 8, 14), "payment": date(2023, 10, 14), "type": "final", "status": "paid"},
-    {"symbol": "VODA", "year": "2024", "dps": Decimal("19.00"), "announced": date(2024, 7, 19), "closure": date(2024, 8, 12), "payment": date(2024, 10, 12), "type": "final", "status": "paid"},
-    {"symbol": "VODA", "year": "2025", "dps": Decimal("20.20"), "announced": date(2025, 7, 22), "closure": date(2025, 8, 15), "payment": date(2025, 10, 15), "type": "final", "status": "paid"},
-
-    # NICO - confirmed from DSE site
-    {"symbol": "NICO", "year": "2023", "dps": Decimal("55.00"), "announced": date(2023, 9, 5), "closure": date(2023, 9, 28), "payment": date(2023, 11, 30), "type": "final", "status": "paid"},
-    {"symbol": "NICO", "year": "2024", "dps": Decimal("62.00"), "announced": date(2024, 9, 3), "closure": date(2024, 9, 26), "payment": date(2024, 11, 28), "type": "final", "status": "paid"},
-    {"symbol": "NICO", "year": "2025", "dps": Decimal("70.00"), "announced": date(2025, 9, 1), "closure": date(2025, 9, 24), "payment": date(2025, 11, 30), "type": "final", "status": "paid"},
-
-    # AFRIPRISE - confirmed from DSE site
-    {"symbol": "AFRIPRISE", "year": "2024", "dps": Decimal("15.00"), "announced": date(2024, 10, 20), "closure": date(2024, 11, 12), "payment": date(2024, 11, 15), "type": "final", "status": "paid"},
-    {"symbol": "AFRIPRISE", "year": "2025", "dps": Decimal("18.00"), "announced": date(2025, 10, 23), "closure": date(2025, 11, 17), "payment": date(2025, 11, 20), "type": "final", "status": "paid"},
-
-    # TCC - Tanzania Cigarette Company
-    {"symbol": "TCC", "year": "2022", "dps": Decimal("480.00"), "announced": date(2022, 5, 25), "closure": date(2022, 6, 15), "payment": date(2022, 6, 20), "type": "final", "status": "paid"},
-    {"symbol": "TCC", "year": "2023", "dps": Decimal("520.00"), "announced": date(2023, 5, 24), "closure": date(2023, 6, 14), "payment": date(2023, 6, 19), "type": "final", "status": "paid"},
-    {"symbol": "TCC", "year": "2024", "dps": Decimal("550.00"), "announced": date(2024, 5, 23), "closure": date(2024, 6, 13), "payment": date(2024, 6, 18), "type": "final", "status": "paid"},
-
-    # TPCC - Tanzania Portland Cement
-    {"symbol": "TPCC", "year": "2022", "dps": Decimal("190.00"), "announced": date(2022, 6, 1), "closure": date(2022, 6, 22), "payment": date(2022, 7, 1), "type": "final", "status": "paid"},
-    {"symbol": "TPCC", "year": "2023", "dps": Decimal("210.00"), "announced": date(2023, 5, 31), "closure": date(2023, 6, 21), "payment": date(2023, 6, 30), "type": "final", "status": "paid"},
-    {"symbol": "TPCC", "year": "2024", "dps": Decimal("230.00"), "announced": date(2024, 5, 30), "closure": date(2024, 6, 20), "payment": date(2024, 6, 28), "type": "final", "status": "paid"},
-
-    # SWIS - Swissport
-    {"symbol": "SWIS", "year": "2022", "dps": Decimal("100.00"), "announced": date(2022, 6, 10), "closure": date(2022, 7, 1), "payment": date(2022, 7, 10), "type": "final", "status": "paid"},
-    {"symbol": "SWIS", "year": "2023", "dps": Decimal("120.00"), "announced": date(2023, 6, 9), "closure": date(2023, 6, 30), "payment": date(2023, 7, 9), "type": "final", "status": "paid"},
-    {"symbol": "SWIS", "year": "2024", "dps": Decimal("140.00"), "announced": date(2024, 6, 7), "closure": date(2024, 6, 28), "payment": date(2024, 7, 7), "type": "final", "status": "paid"},
-
-    # DCB Bank
-    {"symbol": "DCB", "year": "2023", "dps": Decimal("8.00"), "announced": date(2023, 6, 20), "closure": date(2023, 7, 10), "payment": date(2023, 7, 20), "type": "final", "status": "paid"},
-    {"symbol": "DCB", "year": "2024", "dps": Decimal("12.00"), "announced": date(2024, 6, 18), "closure": date(2024, 7, 8), "payment": date(2024, 7, 18), "type": "final", "status": "paid"},
-
-    # DSE (the exchange itself)
-    {"symbol": "DSE", "year": "2023", "dps": Decimal("100.00"), "announced": date(2023, 9, 15), "closure": date(2023, 10, 5), "payment": date(2023, 10, 15), "type": "final", "status": "paid"},
-    {"symbol": "DSE", "year": "2024", "dps": Decimal("120.00"), "announced": date(2024, 9, 13), "closure": date(2024, 10, 3), "payment": date(2024, 10, 13), "type": "final", "status": "paid"},
-
-    # TOL - Tanzania Oxygen
-    {"symbol": "TOL", "year": "2023", "dps": Decimal("45.00"), "announced": date(2023, 8, 10), "closure": date(2023, 8, 30), "payment": date(2023, 9, 10), "type": "final", "status": "paid"},
-    {"symbol": "TOL", "year": "2024", "dps": Decimal("50.00"), "announced": date(2024, 8, 8), "closure": date(2024, 8, 28), "payment": date(2024, 9, 8), "type": "final", "status": "paid"},
-]
+COMPANY_META = {
+    "CRDB":      {"name": "CRDB Bank Plc",                        "sector": "Banking",              "total_shares": 2_611_862_500},
+    "NMB":       {"name": "NMB Bank Plc",                         "sector": "Banking",              "total_shares": 500_000_000},
+    "DCB":       {"name": "DCB Commercial Bank Plc",              "sector": "Banking",              "total_shares": 191_441_218},
+    "MCB":       {"name": "Mkombozi Commercial Bank Plc",         "sector": "Banking",              "total_shares": 61_787_667},
+    "MKCB":      {"name": "Maendeleo Bank Plc",                   "sector": "Banking",              "total_shares": 32_000_000},
+    "KCB":       {"name": "KCB Group Plc",                        "sector": "Banking",              "total_shares": 3_206_611_400},
+    "MBP":       {"name": "Mwalimu Commercial Bank Plc",          "sector": "Banking",              "total_shares": 100_000_000},
+    "YETU":      {"name": "Yetu Microfinance Bank Plc",           "sector": "Banking",              "total_shares": 78_469_374},
+    "MUCOBA":    {"name": "Mucoba Bank Plc",                      "sector": "Banking",              "total_shares": 30_000_000},
+    "TBL":       {"name": "Tanzania Breweries Ltd",               "sector": "Manufacturing",        "total_shares": 295_058_870},
+    "TCC":       {"name": "Tanzania Cigarette Company",           "sector": "Manufacturing",        "total_shares": 20_000_000},
+    "TPCC":      {"name": "Tanzania Portland Cement Company",     "sector": "Manufacturing",        "total_shares": 179_923_100},
+    "TOL":       {"name": "Tanzania Oxygen Ltd",                  "sector": "Manufacturing",        "total_shares": 17_500_000},
+    "USL":       {"name": "USL Ltd",                              "sector": "Manufacturing",        "total_shares": 25_000_000},
+    "EABL":      {"name": "East African Breweries Ltd",           "sector": "Manufacturing",        "total_shares": 790_774_356},
+    "TCCL":      {"name": "Tanzania China Clay Ltd",              "sector": "Manufacturing",        "total_shares": 98_000_000},
+    "SWIS":      {"name": "Swissport Tanzania Plc",               "sector": "Services",             "total_shares": 36_000_000},
+    "VODA":      {"name": "Vodacom Tanzania Plc",                 "sector": "Telecommunications",   "total_shares": 2_240_000_000},
+    "NMG":       {"name": "Nation Media Group Ltd",               "sector": "Media",                "total_shares": 188_542_286},
+    "NICO":      {"name": "NICO (Tanzania) Ltd",                  "sector": "Insurance",            "total_shares": 61_651_180},
+    "PAL":       {"name": "PAL Pensions Ltd",                     "sector": "Insurance",            "total_shares": 160_400_000},
+    "AFRIPRISE": {"name": "Afriprise Holdings Ltd",               "sector": "Financial Services",   "total_shares": 40_000_000},
+    "DSE":       {"name": "Dar es Salaam Stock Exchange Plc",     "sector": "Financial Services",   "total_shares": 23_826_120},
+    "JHL":       {"name": "Jacaranda Hotels Ltd",                 "sector": "Hospitality",          "total_shares": 40_000_000},
+    "TTP":       {"name": "TTP Group Plc",                        "sector": "Agriculture",          "total_shares": 95_000_000},
+    "JATU":      {"name": "Jatu Plc",                             "sector": "Real Estate",          "total_shares": 50_000_000},
+    "KA":        {"name": "Kenya Airways Ltd",                    "sector": "Aviation",             "total_shares": 1_496_469_035},
+    "SWALA":     {"name": "Swala Oil and Gas Plc",                "sector": "Energy",               "total_shares": 71_745_849},
+}
 
 
 def seed():
     db = SessionLocal()
 
-    # Clear existing data
+    print("Fetching live prices from DSE API...")
+    price_scraper = DSEPriceScraper()
+    price_records = price_scraper.scrape_market_prices()
+    print(f"  Got {len(price_records)} price records")
+
+    print("Fetching dividend data from DSE corporate actions...")
+    dividend_scraper = DSEDividendScraper()
+    dividend_records = dividend_scraper.scrape_corporate_actions()
+    print(f"  Got {len(dividend_records)} dividend records")
+
+    # Build price lookup from live API
+    live_prices = {r.symbol: r.price for r in price_records}
+
+    # Clear existing data (respect FK order)
     db.query(Dividend).delete()
     db.query(Company).delete()
     db.commit()
 
-    # Insert companies
+    # Insert companies — use live prices, fall back to metadata
     company_map = {}
-    for c in COMPANIES:
-        company = Company(**c)
+    symbols_inserted = set()
+
+    # First: insert companies we have metadata for
+    for symbol, meta in COMPANY_META.items():
+        price = live_prices.pop(symbol, None)
+        company = Company(
+            symbol=symbol,
+            name=meta["name"],
+            sector=meta["sector"],
+            total_shares=meta["total_shares"],
+            current_price=price,
+        )
         db.add(company)
         db.flush()
-        company_map[c["symbol"]] = company.id
+        company_map[symbol] = company.id
+        symbols_inserted.add(symbol)
 
-    # Insert dividends
-    for d in DIVIDENDS:
-        company_id = company_map.get(d["symbol"])
+    # Second: insert any companies from the API that aren't in our metadata
+    for symbol, price in live_prices.items():
+        if symbol not in symbols_inserted:
+            print(f"  New company from API (no metadata): {symbol} @ {price}")
+            company = Company(
+                symbol=symbol,
+                name=symbol,  # Use symbol as placeholder name
+                sector=None,
+                total_shares=None,
+                current_price=price,
+            )
+            db.add(company)
+            db.flush()
+            company_map[symbol] = company.id
+            symbols_inserted.add(symbol)
+
+    db.commit()
+    print(f"Inserted {len(symbols_inserted)} companies with live prices")
+
+    # Insert dividends from scraped data
+    created = 0
+    skipped = 0
+    for rec in dividend_records:
+        company_id = company_map.get(rec.symbol)
         if not company_id:
-            print(f"WARNING: Company {d['symbol']} not found, skipping dividend")
+            print(f"  WARNING: dividend for unknown symbol {rec.symbol}, skipping")
+            skipped += 1
             continue
 
         dividend = Dividend(
             company_id=company_id,
-            financial_year=d["year"],
-            dividend_per_share=d["dps"],
-            announcement_date=d["announced"],
-            books_closure_date=d["closure"],
-            payment_date=d["payment"],
-            dividend_type=d["type"],
-            status=d["status"],
+            financial_year=rec.financial_year,
+            dividend_per_share=rec.dividend_per_share,
+            announcement_date=rec.announcement_date,
+            books_closure_date=rec.books_closure_date,
+            payment_date=rec.payment_date,
+            dividend_type=rec.dividend_type,
+            status=_infer_status(rec),
+            source_url=rec.source_url,
         )
         db.add(dividend)
+        created += 1
 
     db.commit()
     db.close()
 
-    print(f"Seeded {len(COMPANIES)} companies and {len(DIVIDENDS)} dividend records.")
+    print(f"Inserted {created} dividend records ({skipped} skipped)")
+    print("Done! Database seeded with live DSE data.")
+
+
+def _infer_status(rec):
+    """Infer dividend status based on dates relative to today."""
+    from datetime import date
+    today = date.today()
+
+    if rec.payment_date and rec.payment_date <= today:
+        return "paid"
+    if rec.books_closure_date and rec.books_closure_date <= today:
+        return "books_closed"
+    return "announced"
 
 
 if __name__ == "__main__":
