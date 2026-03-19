@@ -1,136 +1,90 @@
+import json
 import logging
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
 
-from bs4 import BeautifulSoup
+import httpx
 
 from app.scrapers.base import BaseScraper
-from app.config import settings
 
 logger = logging.getLogger("dse.scraper.prices")
 
-DSE_MARKET_SUMMARY_URL = "https://www.dse.co.tz/content/market-summary"
+# The DSE exposes a JSON API for live market prices
+DSE_LIVE_PRICES_API = "https://dse.co.tz/api/get/live/market/prices"
 
 
 @dataclass
 class RawPriceRecord:
     symbol: str
     price: Decimal
-    volume: int | None
+    change: Decimal | None
     date: date | None
 
 
 class DSEPriceScraper(BaseScraper):
-    """Scrapes current market prices from the DSE website."""
+    """Scrapes current market prices from the DSE JSON API."""
 
     def scrape_market_prices(self) -> list[RawPriceRecord]:
-        """Fetch and parse market prices. Tries HTML first, falls back to PDF."""
-        records = self._scrape_html_prices()
-        if records:
-            return records
-
-        logger.info("HTML scrape returned no results, trying data API")
-        return self._scrape_data_api()
-
-    def _scrape_html_prices(self) -> list[RawPriceRecord]:
-        """Parse prices from the DSE market summary HTML page."""
-        html = self._fetch_page(DSE_MARKET_SUMMARY_URL)
-        if not html:
+        """Fetch prices from the DSE live prices API."""
+        response_text = self._fetch_page(DSE_LIVE_PRICES_API)
+        if not response_text:
+            logger.error("Failed to fetch live market prices API")
             return []
         try:
-            return self._parse_market_table(html)
+            return self._parse_json_prices(response_text)
         except Exception:
-            logger.exception("Error parsing market summary page")
+            logger.exception("Error parsing live market prices JSON")
             return []
 
-    def _scrape_data_api(self) -> list[RawPriceRecord]:
-        """Try fetching prices from the data API endpoint."""
-        url = f"{settings.dse_api_base_url}/api/market-data"
-        html = self._fetch_page(url)
-        if not html:
-            return []
-        try:
-            return self._parse_market_table(html)
-        except Exception:
-            logger.exception("Error parsing data API response")
-            return []
+    def _parse_json_prices(self, response_text: str) -> list[RawPriceRecord]:
+        """Parse the DSE live prices JSON response.
 
-    def _parse_market_table(self, html: str) -> list[RawPriceRecord]:
-        """Parse market prices from an HTML table.
-
-        Expected columns: Security | Close Price | Volume | ...
-        Adapts to header text.
+        Expected format:
+        {
+            "success": true,
+            "data": [
+                {"id": 0, "company": "MCB", "price": 1810, "change": -10},
+                ...
+            ]
+        }
         """
-        soup = BeautifulSoup(html, "html.parser")
+        data = json.loads(response_text)
+
+        if not data.get("success"):
+            logger.warning("DSE API returned success=false")
+            return []
+
+        entries = data.get("data", [])
         records: list[RawPriceRecord] = []
 
-        table = soup.find("table")
-        if not table:
-            logger.warning("No table found in market data page")
-            return records
+        for entry in entries:
+            symbol = entry.get("company", "").strip().upper()
+            price_val = entry.get("price")
 
-        rows = table.find_all("tr")
-        if len(rows) < 2:
-            return records
-
-        header_cells = rows[0].find_all(["th", "td"])
-        headers = [cell.get_text(strip=True).lower() for cell in header_cells]
-        col_map = self._build_price_column_map(headers)
-
-        for row in rows[1:]:
-            cells = row.find_all("td")
-            if len(cells) < 2:
+            if not symbol or price_val is None:
                 continue
-            record = self._row_to_price_record(cells, col_map)
-            if record:
-                records.append(record)
 
-        logger.info("Parsed %d price records", len(records))
-        return records
-
-    @staticmethod
-    def _build_price_column_map(headers: list[str]) -> dict[str, int]:
-        col_map: dict[str, int] = {}
-        for i, h in enumerate(headers):
-            if "security" in h or "symbol" in h or "company" in h or "counter" in h:
-                col_map["symbol"] = i
-            elif "close" in h or "price" in h or "last" in h:
-                col_map.setdefault("price", i)
-            elif "volume" in h or "qty" in h:
-                col_map["volume"] = i
-            elif "date" in h:
-                col_map["date"] = i
-        return col_map
-
-    def _row_to_price_record(self, cells: list, col_map: dict[str, int]) -> RawPriceRecord | None:
-        def cell_text(key: str) -> str:
-            idx = col_map.get(key)
-            if idx is not None and idx < len(cells):
-                return cells[idx].get_text(strip=True)
-            return ""
-
-        symbol = cell_text("symbol").upper().strip()
-        if not symbol:
-            return None
-
-        price = self._parse_amount(cell_text("price"))
-        if price is None:
-            return None
-
-        volume_text = cell_text("volume")
-        volume = None
-        if volume_text:
             try:
-                volume = int(volume_text.replace(",", ""))
-            except ValueError:
-                pass
+                price = Decimal(str(price_val))
+            except Exception:
+                logger.warning("Could not parse price for %s: %s", symbol, price_val)
+                continue
 
-        price_date = self._parse_date(cell_text("date"))
+            change = None
+            change_val = entry.get("change")
+            if change_val is not None:
+                try:
+                    change = Decimal(str(change_val))
+                except Exception:
+                    pass
 
-        return RawPriceRecord(
-            symbol=symbol,
-            price=price,
-            volume=volume,
-            date=price_date,
-        )
+            records.append(RawPriceRecord(
+                symbol=symbol,
+                price=price,
+                change=change,
+                date=date.today(),
+            ))
+
+        logger.info("Parsed %d price records from DSE API", len(records))
+        return records

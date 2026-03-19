@@ -22,7 +22,12 @@ class BaseScraper:
         """Fetch an HTML page with retry and backoff. Returns HTML string or None."""
         for attempt in range(1, self.max_retries + 1):
             try:
-                with httpx.Client(timeout=self.timeout, headers=self.headers, follow_redirects=True) as client:
+                with httpx.Client(
+                    timeout=self.timeout,
+                    headers=self.headers,
+                    follow_redirects=True,
+                    verify=False,  # DSE site has SSL cert mismatch on www subdomain
+                ) as client:
                     resp = client.get(url)
                     resp.raise_for_status()
                     return resp.text
