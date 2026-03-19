@@ -92,8 +92,23 @@ class DSEDividendScraper(BaseScraper):
         if not records:
             records = self._parse_from_full_text(soup)
 
+        # Deduplicate: DSE page often has duplicate entries
+        records = self._deduplicate(records)
+
         logger.info("Parsed %d dividend records from corporate actions page", len(records))
         return records
+
+    @staticmethod
+    def _deduplicate(records: list[RawDividendRecord]) -> list[RawDividendRecord]:
+        """Remove duplicate records based on (symbol, dividend_per_share, announcement_date)."""
+        seen: set[tuple] = set()
+        unique: list[RawDividendRecord] = []
+        for rec in records:
+            key = (rec.symbol, rec.dividend_per_share, rec.announcement_date)
+            if key not in seen:
+                seen.add(key)
+                unique.append(rec)
+        return unique
 
     def _extract_dividend_from_text(self, symbol: str, text: str) -> RawDividendRecord | None:
         """Extract dividend data from a text block associated with a company symbol."""

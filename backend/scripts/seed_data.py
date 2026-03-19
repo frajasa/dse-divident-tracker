@@ -66,7 +66,10 @@ def seed():
     print("Fetching live prices from DSE API...")
     price_scraper = DSEPriceScraper()
     price_records = price_scraper.scrape_market_prices()
-    print(f"  Got {len(price_records)} price records")
+    if not price_records:
+        print("  DSE API unavailable (market closed?), will use existing DB prices if available")
+    else:
+        print(f"  Got {len(price_records)} price records")
 
     print("Fetching dividend data from DSE corporate actions...")
     dividend_scraper = DSEDividendScraper()
