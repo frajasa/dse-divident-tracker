@@ -1,0 +1,57 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@layer base {
+  /* Better form defaults */
+  input[type="text"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="password"],
+  input[type="email"],
+  select,
+  textarea {
+    @apply border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:border-blue-500 transition-shadow;
+  }
+
+  /* Smoother table rows */
+  tbody tr {
+    @apply transition-colors duration-150;
+  }
+  tbody tr:hover {
+    @apply bg-blue-50/50;
+  }
+}
+
+@layer components {
+  /* Responsive table wrapper */
+  .table-responsive {
+    @apply overflow-x-auto -mx-4 sm:mx-0;
+  }
+  .table-responsive > table {
+    @apply min-w-[640px] sm:min-w-0;
+  }
+
+  /* Page heading style */
+  .page-heading {
+    @apply text-2xl sm:text-3xl font-bold tracking-tight text-gray-900;
+  }
+  .page-subtitle {
+    @apply text-gray-500 text-sm sm:text-base mt-1;
+  }
+
+  /* Card base */
+  .card {
+    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+  }
+}
