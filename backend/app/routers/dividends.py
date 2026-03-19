@@ -7,7 +7,7 @@ from app.services import dividend_service
 router = APIRouter(prefix="/api/dividends", tags=["dividends"])
 
 
-@router.get("/")
+@router.get("")
 def list_dividends(year: str | None = None, db: Session = Depends(get_db)):
     """List all dividend announcements, optionally filtered by year."""
     return dividend_service.get_all_dividends(db, year=year)

@@ -30,7 +30,7 @@ class MarkNotificationRequest(BaseModel):
 # ─── Watchlist ──────────────────────────────────────────────────
 
 
-@router.get("/")
+@router.get("")
 def get_watchlist(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
@@ -64,7 +64,7 @@ def get_watchlist(
     return result
 
 
-@router.post("/")
+@router.post("")
 def add_to_watchlist(
     req: AddWatchlistRequest,
     current_user: User = Depends(get_current_user),

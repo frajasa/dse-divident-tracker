@@ -10,7 +10,7 @@ from app.models import Company, Dividend
 router = APIRouter(prefix="/api/companies", tags=["companies"])
 
 
-@router.get("/")
+@router.get("")
 def list_companies(
     q: str | None = None,
     sector: str | None = None,

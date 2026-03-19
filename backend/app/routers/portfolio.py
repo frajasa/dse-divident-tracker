@@ -25,7 +25,7 @@ class UpdateHoldingRequest(BaseModel):
     purchase_price: float | None = None
 
 
-@router.get("/")
+@router.get("")
 def get_portfolio(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),

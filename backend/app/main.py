@@ -40,6 +40,7 @@ app = FastAPI(
     description="Dividend tracking, tax calculation, and portfolio projection for Dar es Salaam Stock Exchange",
     version="1.0.0",
     lifespan=lifespan,
+    redirect_slashes=False,
 )
 
 # ─── CORS — reads allowed origins from config ────────────────────

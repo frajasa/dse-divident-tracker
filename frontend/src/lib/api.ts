@@ -5,7 +5,7 @@ const BASE = "/api";
 // ─── Public endpoints (no auth required) ─────────────────────────
 
 export async function fetchDividends(year?: string) {
-  const url = year ? `${BASE}/dividends/?year=${year}` : `${BASE}/dividends/`;
+  const url = year ? `${BASE}/dividends/?year=${year}` : `${BASE}/dividends`;
   const res = await fetch(url);
   return res.json();
 }
@@ -26,7 +26,7 @@ export async function fetchHistory(symbol: string) {
 }
 
 export async function fetchCompanies() {
-  const res = await fetch(`${BASE}/companies/`);
+  const res = await fetch(`${BASE}/companies`);
   return res.json();
 }
 
@@ -97,7 +97,7 @@ export async function loginUser(phone: string, password: string) {
 // ─── Protected endpoints (require auth) ──────────────────────────
 
 export async function fetchPortfolio() {
-  const res = await fetch(`${BASE}/portfolio/`, {
+  const res = await fetch(`${BASE}/portfolio`, {
     headers: authHeaders(),
   });
   if (res.status === 401) throw new Error("Unauthorized");
@@ -228,7 +228,7 @@ export async function askAssistant(question: string) {
 // ─── Watchlist & Alerts endpoints ────────────────────────────────
 
 export async function fetchWatchlist() {
-  const res = await fetch(`${BASE}/watchlist/`, {
+  const res = await fetch(`${BASE}/watchlist`, {
     headers: authHeaders(),
   });
   if (res.status === 401) throw new Error("Unauthorized");
@@ -236,7 +236,7 @@ export async function fetchWatchlist() {
 }
 
 export async function addToWatchlist(symbol: string, notes?: string) {
-  const res = await fetch(`${BASE}/watchlist/`, {
+  const res = await fetch(`${BASE}/watchlist`, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify({ symbol, notes }),
