@@ -79,52 +79,42 @@ def seed():
     # Build price lookup from live API
     live_prices = {r.symbol: r.price for r in price_records}
 
-    # Clear existing data (respect FK order)
-    db.query(Dividend).delete()
-    db.query(Company).delete()
-    db.commit()
-
-    # Insert companies — use live prices, fall back to metadata
+    # Upsert companies — no destructive deletes, safe with FK constraints
     company_map = {}
-    symbols_inserted = set()
+    created_co = updated_co = 0
 
-    # First: insert companies we have metadata for
-    for symbol, meta in COMPANY_META.items():
-        price = live_prices.pop(symbol, None)
-        company = Company(
-            symbol=symbol,
-            name=meta["name"],
-            sector=meta["sector"],
-            total_shares=meta["total_shares"],
-            current_price=price,
-        )
-        db.add(company)
-        db.flush()
-        company_map[symbol] = company.id
-        symbols_inserted.add(symbol)
+    all_symbols = set(COMPANY_META.keys()) | set(live_prices.keys())
+    for symbol in all_symbols:
+        meta = COMPANY_META.get(symbol, {"name": symbol, "sector": None, "total_shares": None})
+        price = live_prices.get(symbol)
 
-    # Second: insert any companies from the API that aren't in our metadata
-    for symbol, price in live_prices.items():
-        if symbol not in symbols_inserted:
-            print(f"  New company from API (no metadata): {symbol} @ {price}")
+        existing = db.query(Company).filter_by(symbol=symbol).first()
+        if existing:
+            existing.name = meta["name"]
+            existing.sector = meta["sector"]
+            existing.total_shares = meta["total_shares"]
+            if price is not None:
+                existing.current_price = price
+            company_map[symbol] = existing.id
+            updated_co += 1
+        else:
             company = Company(
                 symbol=symbol,
-                name=symbol,  # Use symbol as placeholder name
-                sector=None,
-                total_shares=None,
+                name=meta["name"],
+                sector=meta["sector"],
+                total_shares=meta["total_shares"],
                 current_price=price,
             )
             db.add(company)
             db.flush()
             company_map[symbol] = company.id
-            symbols_inserted.add(symbol)
+            created_co += 1
 
     db.commit()
-    print(f"Inserted {len(symbols_inserted)} companies with live prices")
+    print(f"Companies: {created_co} created, {updated_co} updated")
 
-    # Insert dividends from scraped data
-    created = 0
-    skipped = 0
+    # Upsert dividends — deduplicate on (company_id, financial_year, dividend_type)
+    created_div = updated_div = skipped = 0
     for rec in dividend_records:
         company_id = company_map.get(rec.symbol)
         if not company_id:
@@ -132,24 +122,39 @@ def seed():
             skipped += 1
             continue
 
-        dividend = Dividend(
-            company_id=company_id,
-            financial_year=rec.financial_year,
-            dividend_per_share=rec.dividend_per_share,
-            announcement_date=rec.announcement_date,
-            books_closure_date=rec.books_closure_date,
-            payment_date=rec.payment_date,
-            dividend_type=rec.dividend_type,
-            status=_infer_status(rec),
-            source_url=rec.source_url,
+        existing = (
+            db.query(Dividend)
+            .filter_by(company_id=company_id, financial_year=rec.financial_year, dividend_type=rec.dividend_type)
+            .first()
         )
-        db.add(dividend)
-        created += 1
+
+        if existing:
+            existing.dividend_per_share = rec.dividend_per_share
+            existing.announcement_date = rec.announcement_date or existing.announcement_date
+            existing.books_closure_date = rec.books_closure_date or existing.books_closure_date
+            existing.payment_date = rec.payment_date or existing.payment_date
+            existing.source_url = rec.source_url
+            existing.status = _infer_status(rec)
+            updated_div += 1
+        else:
+            dividend = Dividend(
+                company_id=company_id,
+                financial_year=rec.financial_year,
+                dividend_per_share=rec.dividend_per_share,
+                announcement_date=rec.announcement_date,
+                books_closure_date=rec.books_closure_date,
+                payment_date=rec.payment_date,
+                dividend_type=rec.dividend_type,
+                status=_infer_status(rec),
+                source_url=rec.source_url,
+            )
+            db.add(dividend)
+            created_div += 1
 
     db.commit()
     db.close()
 
-    print(f"Inserted {created} dividend records ({skipped} skipped)")
+    print(f"Dividends: {created_div} created, {updated_div} updated, {skipped} skipped")
     print("Done! Database seeded with live DSE data.")
 
 
